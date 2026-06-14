@@ -12,11 +12,11 @@
     <Authors>KaliCZ</Authors>
     <PackageTags>Aspire, dotnet-aspire, AppHost, ports, worktree, local-dev</PackageTags>
     <Copyright>Copyright © 2026 KaliCZ</Copyright>
-    <PackageProjectUrl>https://github.com/KaliCZ/Kalicz.Aspire</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/KaliCZ/Aspire</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/KaliCZ/Kalicz.Aspire</RepositoryUrl>
+    <RepositoryUrl>https://github.com/KaliCZ/Aspire</RepositoryUrl>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <DebugType>pdbonly</DebugType>
