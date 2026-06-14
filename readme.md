@@ -1,6 +1,6 @@
 # Kalicz.Aspire
 
-[![build](https://github.com/KaliCZ/Kalicz.Aspire/actions/workflows/build.yml/badge.svg)](https://github.com/KaliCZ/Kalicz.Aspire/actions/workflows/build.yml)
+[![build](https://github.com/KaliCZ/Aspire/actions/workflows/build.yml/badge.svg)](https://github.com/KaliCZ/Aspire/actions/workflows/build.yml)
 [![NuGet](https://img.shields.io/nuget/v/Kalicz.Aspire.svg)](https://www.nuget.org/packages/Kalicz.Aspire)
 
 Parallel-safe local ports for [.NET Aspire](https://learn.microsoft.com/dotnet/aspire/) AppHosts.
