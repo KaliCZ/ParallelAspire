@@ -50,6 +50,10 @@ jobs:
           -p:PackageReleaseNotes="See $RELEASE_URL" \
           -p:PackageOutputPath="$PWD/out"
 
+    # Validate the Release binaries before they leave the runner.
+    - name: Test
+      run: dotnet test --no-build -c $config
+
     - name: Publish package
       run: dotnet nuget push ./out/*.nupkg --source nuget.org --api-key ${{ secrets.NUGET_TOKEN }}
 
