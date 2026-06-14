@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Kalicz.Aspire/Kalicz.Aspire.csproj" />
+    <Project Path="src/Kalicz.Aspire.Tests/Kalicz.Aspire.Tests.csproj" />
   </Folder>
   <Folder Name="/Other/">
     <File Path=".editorconfig" />
