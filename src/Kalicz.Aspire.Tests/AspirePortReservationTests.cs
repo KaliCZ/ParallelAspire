@@ -1,80 +1,97 @@
+using System.Net;
+using System.Net.Sockets;
 using Kalicz.Aspire;
+
+// These tests set process-global env vars and bind ports, so they must not run concurrently.
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
 
 namespace Kalicz.Aspire.Tests;
 
 public class AspirePortReservationTests
 {
-    // The four Aspire ports are communicated only through env vars; extras come back on the object.
-    private static int[] CapturePorts(AspirePortReservation reservation) =>
-    [
-        PortOf("ASPNETCORE_URLS"),
-        PortOf("ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL"),
-        PortOf("ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT_URL"),
-        PortOf("ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL"),
-        .. reservation.ExtraPorts,
-    ];
-
     private static int PortOf(string envVar) =>
         new Uri(Environment.GetEnvironmentVariable(envVar)
                 ?? throw new InvalidOperationException($"{envVar} not set")).Port;
 
     [Fact]
-    public void TwoLiveReservations_ProduceCompletelyDistinctPorts()
+    public async Task SecondReservation_BlocksUntilFirstIsDisposed()
     {
-        // Distinct mutex names so the test never depends on OS-specific named-mutex
-        // reentrancy: distinctness here is driven purely by the held listeners — while
-        // the first reservation is alive it keeps its ports bound, forcing the second
-        // to scan past them. Same bases on purpose, so a regression that stopped holding
-        // ports would make the two sets collide and fail this test.
-        using var first = AspirePortReservation.Reserve(o =>
-        {
-            o.MutexName = "Kalicz.Aspire.Tests.A";
-            o.ExtraPortCount = 2;
-        });
-        var firstPorts = CapturePorts(first);
+        const string lockName = "Kalicz.Aspire.Tests.Lock";
 
-        using var second = AspirePortReservation.Reserve(o =>
+        var first = await AspirePortReservation.ReserveAsync(o =>
         {
-            o.MutexName = "Kalicz.Aspire.Tests.B";
-            o.ExtraPortCount = 2;
+            o.LockName = lockName;
+            o.DashboardBase = 41000;
+            o.OtlpBase = 42000;
         });
-        var secondPorts = CapturePorts(second);
 
-        Assert.Equal(6, firstPorts.Length);
-        Assert.Equal(6, secondPorts.Length);
-        Assert.Equal(firstPorts.Length, firstPorts.Distinct().Count());   // unique within itself
-        Assert.Equal(secondPorts.Length, secondPorts.Distinct().Count());
-        Assert.Empty(firstPorts.Intersect(secondPorts));                  // no overlap across the two
+        var secondTask = AspirePortReservation.ReserveAsync(o =>
+        {
+            o.LockName = lockName;
+            o.DashboardBase = 41000;
+            o.OtlpBase = 42000;
+        });
+
+        // While the first reservation holds the lock, the second must not acquire it.
+        var winner = await Task.WhenAny(secondTask, Task.Delay(500));
+        Assert.NotSame(secondTask, winner);
+
+        // Releasing the first lets the second proceed.
+        first.Dispose();
+        using var second = await secondTask.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.NotNull(second);
     }
 
     [Fact]
-    public void PinnedMode_ResolvesPortsToBasePlusOffset_DeterministicallyAndDistinctPerOffset()
+    public async Task Probe_StepsPastPortAlreadyInUse()
+    {
+        const int dashboardBase = 43000;
+        using var occupied = new TcpListener(IPAddress.Loopback, dashboardBase);
+        occupied.Start();   // hold the base port so the reservation must step past it
+
+        using var ports = await AspirePortReservation.ReserveAsync(o =>
+        {
+            o.LockName = "Kalicz.Aspire.Tests.Probe";
+            o.DashboardBase = dashboardBase;
+            o.OtlpBase = 44000;
+        });
+
+        Assert.True(PortOf("ASPNETCORE_URLS") > dashboardBase,
+            "dashboard port should have stepped past the occupied base port");
+    }
+
+    [Fact]
+    public async Task PinnedMode_ResolvesPortsToBasePlusOffset_DeterministicallyAndDistinctPerOffset()
     {
         const string offsetVar = "KALICZ_ASPIRE_TEST_OFFSET";
-        void Reserve(int offset, out int[] ports)
+        async Task<int[]> ReserveAt(int offset)
         {
             Environment.SetEnvironmentVariable(offsetVar, offset.ToString());
-            // Pinned mode holds no listeners and takes no mutex, so nothing to dispose.
-            var r = AspirePortReservation.Reserve(o =>
+            // Pinned mode takes no lock and holds nothing, so nothing to dispose.
+            var r = await AspirePortReservation.ReserveAsync(o =>
             {
                 o.DashboardBase = 30000;
                 o.OtlpBase = 31000;
                 o.ExtraPortCount = 1;
                 o.OffsetEnvironmentVariable = offsetVar;
             });
-            ports = CapturePorts(r);
+            return
+            [
+                PortOf("ASPNETCORE_URLS"),
+                PortOf("ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL"),
+                PortOf("ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT_URL"),
+                PortOf("ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL"),
+                .. r.ExtraPorts,
+            ];
         }
 
         try
         {
-            Reserve(0, out var atZero);
+            var atZero = await ReserveAt(0);
+            var atFive = await ReserveAt(5);
             // Dashboard=30000, OTLP=31000, OTLP-HTTP=31064, resource=31128, extra=31192.
-            Assert.Equal([30000, 31000, 31064, 31128, 31192], atZero);
-
-            Reserve(5, out var atFive);
-            Assert.Equal([30005, 31005, 31069, 31133, 31197], atFive);
-
-            Assert.Empty(atZero.Intersect(atFive));
+            Assert.Equal(new[] { 30000, 31000, 31064, 31128, 31192 }, atZero);
+            Assert.Equal(new[] { 30005, 31005, 31069, 31133, 31197 }, atFive);
         }
         finally
         {

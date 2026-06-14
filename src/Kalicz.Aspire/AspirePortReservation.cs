@@ -10,42 +10,62 @@ namespace Kalicz.Aspire;
 /// Aspire dashboard / OTLP / resource-service ports — plus any extras — instead of the fixed
 /// defaults that collide.
 /// <para>
-/// <see cref="Reserve"/> finds free ports — serialized machine-wide via a named mutex so two
-/// simultaneous starts can't pick the same one — points Aspire at them through env vars, and
-/// holds the ports (open listeners) until <see cref="ReleaseForStartup"/> is called right before
-/// the host binds them. Set <see cref="AspirePortOptions.OffsetEnvironmentVariable"/> to pin
-/// deterministic ports and skip scanning.
+/// <see cref="ReserveAsync"/> takes a machine-wide lock, probes for free ports, and points Aspire
+/// at them through env vars. The lock is held by the returned object: keep it alive across the
+/// app's startup and dispose it once the app has started, so a sibling can't pick the same ports
+/// while we're still binding them. Set <see cref="AspirePortOptions.OffsetEnvironmentVariable"/>
+/// to pin deterministic ports and skip the lock entirely.
 /// </para>
+/// <code>
+/// DistributedApplication app;
+/// using (var ports = await AspirePortReservation.ReserveAsync(o => o.ExtraPortCount = 1))
+/// {
+///     var builder = DistributedApplication.CreateBuilder(args);
+///     builder.AddRedis("redis", port: ports.ExtraPorts[0]);
+///     app = builder.Build();
+///     await app.StartAsync();   // infra ports are bound by the time this returns
+/// }                             // lock released here, after startup
+/// await app.WaitForShutdownAsync();
+/// </code>
 /// </summary>
 public sealed class AspirePortReservation : IDisposable
 {
-    // Width of each scan lane: a port type scans [base, base + LaneWidth) and lanes sit LaneWidth
-    // apart, so independent scans never stray into a neighbour's range.
+    // Width of each probe lane: a port type is probed in [base, base + LaneWidth) and lanes sit
+    // LaneWidth apart, so independent probes never stray into a neighbour's range.
     private const int LaneWidth = 64;
 
-    private readonly Mutex? _mutex;
-    private readonly List<TcpListener> _held = [];
-    private bool _released;
+    private readonly FileStream? _lockHandle;   // null in pinned mode (no lock taken)
+    private bool _disposed;
 
-    private AspirePortReservation(Mutex? mutex) => _mutex = mutex;
+    private AspirePortReservation(FileStream? lockHandle) => _lockHandle = lockHandle;
 
     /// <summary>The reserved extra ports, in the order requested via <see cref="AspirePortOptions.ExtraPortCount"/>.</summary>
     public IReadOnlyList<int> ExtraPorts { get; private set; } = [];
 
     /// <summary>Reserve the Aspire ports (and any extras) for this AppHost instance.</summary>
     /// <param name="configure">Optional tweaks; see <see cref="AspirePortOptions"/>.</param>
-    [MethodImpl(MethodImplOptions.NoInlining)] // keep GetCallingAssembly pointing at the real caller
-    public static AspirePortReservation Reserve(Action<AspirePortOptions>? configure = null)
+    /// <param name="cancellationToken">Cancels waiting for the lock.</param>
+    // Non-async + NoInlining so GetCallingAssembly resolves the real caller, not the async state
+    // machine; the actual awaiting happens in ReserveCoreAsync.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static Task<AspirePortReservation> ReserveAsync(
+        Action<AspirePortOptions>? configure = null, CancellationToken cancellationToken = default)
     {
         var options = new AspirePortOptions();
         configure?.Invoke(options);
+        var caller = Assembly.GetCallingAssembly();
+        return ReserveCoreAsync(options, caller, cancellationToken);
+    }
 
+    private static async Task<AspirePortReservation> ReserveCoreAsync(
+        AspirePortOptions options, Assembly caller, CancellationToken cancellationToken)
+    {
         // OTLP block lanes: gRPC, HTTP, resource-service, then one lane per extra port.
         var otlpHttpBase = options.OtlpBase + LaneWidth;
         var resourceBase = options.OtlpBase + 2 * LaneWidth;
         var extraBase = options.OtlpBase + 3 * LaneWidth;
 
-        // Pinned mode: deterministic ports, no scan/hold needed.
+        // Pinned mode: deterministic ports, no lock or probing.
         if (options.OffsetEnvironmentVariable is { } offsetVar
             && int.TryParse(Environment.GetEnvironmentVariable(offsetVar), out var offset))
         {
@@ -61,27 +81,61 @@ public sealed class AspirePortReservation : IDisposable
             return pinned;
         }
 
-        var mutexName = options.MutexName
-            ?? Assembly.GetCallingAssembly().GetName().Name
-            ?? "Kalicz.Aspire";
+        var lockName = options.LockName ?? caller.GetName().Name ?? "Kalicz.Aspire";
+        var lockHandle = await AcquireLockAsync(lockName, options.Logger ?? Console.WriteLine, cancellationToken)
+            .ConfigureAwait(false);
 
-        var mutex = new Mutex(false, mutexName);
-        try { mutex.WaitOne(TimeSpan.FromSeconds(30)); }
-        catch (AbandonedMutexException) { /* previous holder died mid-reservation; we own it now */ }
+        try
+        {
+            SetEnv(
+                FindFreePortFrom(options.DashboardBase),
+                FindFreePortFrom(options.OtlpBase),
+                FindFreePortFrom(otlpHttpBase),
+                FindFreePortFrom(resourceBase));
 
-        var reservation = new AspirePortReservation(mutex);
-        SetEnv(
-            reservation.ReserveFreePortFrom(options.DashboardBase),
-            reservation.ReserveFreePortFrom(options.OtlpBase),
-            reservation.ReserveFreePortFrom(otlpHttpBase),
-            reservation.ReserveFreePortFrom(resourceBase));
+            var extras = new int[options.ExtraPortCount];
+            for (var i = 0; i < extras.Length; i++)
+                extras[i] = FindFreePortFrom(extraBase + i * LaneWidth);
 
-        var extras = new int[options.ExtraPortCount];
-        for (var i = 0; i < extras.Length; i++)
-            extras[i] = reservation.ReserveFreePortFrom(extraBase + i * LaneWidth);
-        reservation.ExtraPorts = extras;
+            return new AspirePortReservation(lockHandle) { ExtraPorts = extras };
+        }
+        catch
+        {
+            lockHandle.Dispose();   // don't leak the lock if probing throws
+            throw;
+        }
+    }
 
-        return reservation;
+    // Holds the lock as an exclusive (FileShare.None) file handle — no thread affinity (so it can be
+    // disposed on whatever thread startup resumed on), cross-platform, and auto-released by the OS if
+    // the process dies. A sibling that can't open it polls until we release.
+    private static async Task<FileStream> AcquireLockAsync(
+        string lockName, Action<string> log, CancellationToken cancellationToken)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"{Sanitize(lockName)}.lock");
+        var poll = TimeSpan.FromMilliseconds(200);
+        var heartbeat = TimeSpan.FromSeconds(5);
+        var waited = TimeSpan.Zero;
+        var nextBeat = heartbeat;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException) { /* held by another instance — wait and retry */ }
+
+            await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
+            waited += poll;
+            if (waited >= nextBeat)
+            {
+                log($"[Kalicz.Aspire] Still waiting for the port-reservation lock ({path}) — " +
+                    $"{waited.TotalSeconds:F0}s elapsed. Another AppHost instance is starting.");
+                nextBeat += heartbeat;
+            }
+        }
     }
 
     private static int[] PinnedExtras(int count, int extraBase, int offset)
@@ -92,18 +146,24 @@ public sealed class AspirePortReservation : IDisposable
         return extras;
     }
 
-    private int ReserveFreePortFrom(int start)
+    // Probe (bind then immediately release) to step past ports an unrelated process is using. We
+    // don't hold the port: the lock keeps siblings out until our host binds it for real, and a
+    // non-AppHost process grabbing it in that gap is unpreventable and out of scope.
+    private static int FindFreePortFrom(int start)
     {
         for (var port = start; port < start + LaneWidth; port++)
         {
+            var probe = new TcpListener(IPAddress.Loopback, port);
             try
             {
-                var listener = new TcpListener(IPAddress.Loopback, port);
-                listener.Start();
-                _held.Add(listener);   // hold it open so a sibling instance sees the port taken
-                return port;
+                probe.Start();
             }
-            catch (SocketException) { /* in use — try the next port */ }
+            catch (SocketException)
+            {
+                continue;   // in use — try the next port
+            }
+            probe.Stop();   // free it immediately — we don't hold the port
+            return port;
         }
         throw new InvalidOperationException($"No free port found in [{start}, {start + LaneWidth}).");
     }
@@ -116,23 +176,18 @@ public sealed class AspirePortReservation : IDisposable
         Environment.SetEnvironmentVariable("ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL", $"http://localhost:{resource}");
     }
 
-    /// <summary>Release the held ports and the mutex, right before the host binds the ports itself.</summary>
-    public void ReleaseForStartup() => Dispose();
+    private static string Sanitize(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+        return name;
+    }
 
-    /// <summary>Releases any still-held ports and the mutex. Idempotent; safe to call more than once.</summary>
+    /// <summary>Releases the lock so a waiting sibling can proceed. Call once the app has started.</summary>
     public void Dispose()
     {
-        if (_released) return;
-        _released = true;
-        foreach (var listener in _held)
-        {
-            try { listener.Stop(); } catch { /* best effort */ }
-        }
-        _held.Clear();
-        if (_mutex is not null)
-        {
-            try { _mutex.ReleaseMutex(); } catch { /* not held / abandoned */ }
-            _mutex.Dispose();
-        }
+        if (_disposed) return;
+        _disposed = true;
+        _lockHandle?.Dispose();
     }
 }
