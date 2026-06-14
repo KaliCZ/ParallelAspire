@@ -1,0 +1,13 @@
+[Oo]bj
+[Bb]in
+*.user
+*.suo
+*.vs
+*.[Cc]ache
+*.bak
+*.ncb
+src/packages
+src/.idea
+.idea/
+.claude/
+out/

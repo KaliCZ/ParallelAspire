@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Kalicz.Aspire/Kalicz.Aspire.csproj" />
+  </Folder>
+  <Folder Name="/Other/">
+    <File Path=".editorconfig" />
+    <File Path="license.txt" />
+    <File Path="readme.md" />
+  </Folder>
+</Solution>

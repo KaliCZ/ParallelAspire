@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <Version>0.0.0-dev</Version>
+    <PackageId>Kalicz.Aspire</PackageId>
+    <Description>Parallel-safe local ports for .NET Aspire AppHosts: reserves free dashboard / OTLP / resource-service ports (plus any extras) under a machine-wide mutex so multiple AppHost instances — e.g. git worktrees — can run side by side.</Description>
+    <Authors>KaliCZ</Authors>
+    <PackageTags>Aspire, dotnet-aspire, AppHost, ports, worktree, local-dev</PackageTags>
+    <Copyright>Copyright © 2026 KaliCZ</Copyright>
+    <PackageProjectUrl>https://github.com/KaliCZ/Kalicz.Aspire</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/KaliCZ/Kalicz.Aspire</RepositoryUrl>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DebugType>pdbonly</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Product>Kalicz.Aspire</Product>
+    <PackageReadmeFile>readme.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\readme.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>
