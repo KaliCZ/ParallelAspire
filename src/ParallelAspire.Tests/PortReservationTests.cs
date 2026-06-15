@@ -61,6 +61,41 @@ public class PortReservationTests
     }
 
     [Fact]
+    public async Task WhileWaiting_LogsHeartbeatRepeatedlyUntilTheLockIsReleased()
+    {
+        const string lockName = "ParallelAspire.Tests.Heartbeat";
+        var messages = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        // First reservation holds the lock.
+        var first = await PortReservation.ReserveAsync(o =>
+        {
+            o.LockName = lockName;
+            o.DashboardBase = 45000;
+            o.OtlpBase = 46000;
+        });
+
+        // Second waits behind it, heart-beating fast so the test doesn't crawl.
+        var secondTask = PortReservation.ReserveAsync(o =>
+        {
+            o.LockName = lockName;
+            o.DashboardBase = 45000;
+            o.OtlpBase = 46000;
+            o.HeartbeatInterval = TimeSpan.FromMilliseconds(150);
+            o.Logger = messages.Enqueue;
+        });
+
+        // Wait until it has logged at least twice, then let it through.
+        for (var i = 0; i < 100 && messages.Count < 2; i++)
+            await Task.Delay(50);
+
+        first.Dispose();
+        using var second = await secondTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(messages.Count >= 2, $"expected the wait to be logged at least twice, got {messages.Count}");
+        Assert.All(messages, m => Assert.Contains("waiting", m, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task ReserveAsync_WithCountOverload_ReservesThatManyDistinctExtraPorts()
     {
         using var ports = await PortReservation.ReserveAsync(3);
