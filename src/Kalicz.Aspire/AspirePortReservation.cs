@@ -10,7 +10,7 @@ namespace Kalicz.Aspire;
 /// Aspire dashboard / OTLP / resource-service ports — plus any extras — instead of the fixed
 /// defaults that collide.
 /// <para>
-/// <see cref="ReserveAsync"/> takes a machine-wide lock, probes for free ports, and points Aspire
+/// <c>ReserveAsync</c> takes a machine-wide lock, probes for free ports, and points Aspire
 /// at them through env vars. The lock is held by the returned object: keep it alive across the
 /// app's startup and dispose it once the app has started, so a sibling can't pick the same ports
 /// while we're still binding them. Set <see cref="AspirePortOptions.OffsetEnvironmentVariable"/>
@@ -55,6 +55,17 @@ public sealed class AspirePortReservation : IDisposable
         configure?.Invoke(options);
         var caller = Assembly.GetCallingAssembly();
         return ReserveCoreAsync(options, caller, cancellationToken);
+    }
+
+    /// <summary>Reserve the Aspire ports plus <paramref name="extraPortCount"/> extras, leaving everything else default.</summary>
+    /// <param name="extraPortCount">Extra ports to reserve beyond Aspire's own; see <see cref="ExtraPorts"/>.</param>
+    /// <param name="cancellationToken">Cancels waiting for the lock.</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public static Task<AspirePortReservation> ReserveAsync(
+        int extraPortCount, CancellationToken cancellationToken = default)
+    {
+        var caller = Assembly.GetCallingAssembly();
+        return ReserveCoreAsync(new AspirePortOptions { ExtraPortCount = extraPortCount }, caller, cancellationToken);
     }
 
     private static async Task<AspirePortReservation> ReserveCoreAsync(

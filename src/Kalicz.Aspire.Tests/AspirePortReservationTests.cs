@@ -61,6 +61,14 @@ public class AspirePortReservationTests
     }
 
     [Fact]
+    public async Task ReserveAsync_WithCountOverload_ReservesThatManyDistinctExtraPorts()
+    {
+        using var ports = await AspirePortReservation.ReserveAsync(3);
+        Assert.Equal(3, ports.ExtraPorts.Count);
+        Assert.Equal(3, ports.ExtraPorts.Distinct().Count());
+    }
+
+    [Fact]
     public async Task PinnedMode_ResolvesPortsToBasePlusOffset_DeterministicallyAndDistinctPerOffset()
     {
         const string offsetVar = "KALICZ_ASPIRE_TEST_OFFSET";
