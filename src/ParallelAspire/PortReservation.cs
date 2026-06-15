@@ -93,7 +93,8 @@ public sealed class PortReservation : IDisposable
         }
 
         var lockName = options.LockName ?? caller.GetName().Name ?? "ParallelAspire";
-        var lockHandle = await AcquireLockAsync(lockName, options.Logger ?? Console.WriteLine, cancellationToken)
+        var lockHandle = await AcquireLockAsync(
+                lockName, options.Logger ?? Console.WriteLine, options.HeartbeatInterval, cancellationToken)
             .ConfigureAwait(false);
 
         try
@@ -121,11 +122,10 @@ public sealed class PortReservation : IDisposable
     // disposed on whatever thread startup resumed on), cross-platform, and auto-released by the OS if
     // the process dies. A sibling that can't open it polls until we release.
     private static async Task<FileStream> AcquireLockAsync(
-        string lockName, Action<string> log, CancellationToken cancellationToken)
+        string lockName, Action<string> log, TimeSpan heartbeat, CancellationToken cancellationToken)
     {
         var path = Path.Combine(Path.GetTempPath(), $"{Sanitize(lockName)}.lock");
         var poll = TimeSpan.FromMilliseconds(200);
-        var heartbeat = TimeSpan.FromSeconds(5);
         var waited = TimeSpan.Zero;
         var nextBeat = heartbeat;
 

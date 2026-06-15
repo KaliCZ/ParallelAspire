@@ -37,9 +37,14 @@ public sealed class PortReservationOptions
     public string? OffsetEnvironmentVariable { get; set; }
 
     /// <summary>
-    /// Sink for diagnostic messages — currently the every-5-seconds "still waiting for the lock"
-    /// heartbeat emitted while another AppHost instance is mid-startup. Defaults to
-    /// <see cref="System.Console.WriteLine(string)"/>.
+    /// Sink for diagnostic messages — the "still waiting for the lock" heartbeat emitted while
+    /// another AppHost instance is mid-startup. Defaults to <see cref="System.Console.WriteLine(string)"/>.
     /// </summary>
     public Action<string>? Logger { get; set; }
+
+    /// <summary>
+    /// How often the "still waiting for the lock" heartbeat is logged while blocked on a sibling.
+    /// Defaults to 5 seconds.
+    /// </summary>
+    public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(5);
 }
