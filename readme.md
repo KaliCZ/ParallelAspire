@@ -46,18 +46,26 @@ seconds so you can tell it's alive, not hung.
 
 ### Extra ports
 
-Need pinned host ports for your own resources (Redis, RabbitMQ, …)? Ask for extras and read
-them back in order:
+Need pinned host ports for your own resources (Redis, RabbitMQ, …)? Pass the count — there's an
+overload that takes just the number of extra ports — and read them back in order:
 
 ```csharp
-using (var ports = await AspirePortReservation.ReserveAsync(o => o.ExtraPortCount = 2))
+using (var ports = await AspirePortReservation.ReserveAsync(2))   // 2 extra ports
 {
     var builder = DistributedApplication.CreateBuilder(args);
     builder.AddRedis("redis", port: ports.ExtraPorts[0]);
     builder.AddRabbitMQ("rabbit", port: ports.ExtraPorts[1]);
-    // ...
-}
+
+    // Aspire logs the dashboard URL itself on startup, but not your extra ports — so log those:
+    Console.WriteLine($"redis → {ports.ExtraPorts[0]}, rabbit → {ports.ExtraPorts[1]}");
+
+    app = builder.Build();
+    await app.StartAsync();
+}   // (app declared before the using, as in the Usage example above)
 ```
+
+For anything beyond the count (a custom `LockName`, different bases, pinned mode) use the
+`ReserveAsync(o => …)` overload instead — see [Options](#options).
 
 #### One port, one resource
 

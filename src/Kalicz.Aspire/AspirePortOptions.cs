@@ -1,7 +1,7 @@
 namespace Kalicz.Aspire;
 
 /// <summary>
-/// Tunables for <see cref="AspirePortReservation.ReserveAsync"/>. All optional — the defaults give a
+/// Tunables for <see cref="AspirePortReservation"/>. All optional — the defaults give a
 /// working reservation; override only what collides with another local Aspire app.
 /// </summary>
 public sealed class AspirePortOptions
