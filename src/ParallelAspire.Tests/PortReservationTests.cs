@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using ParallelAspire;
 
 // These tests set process-global env vars and bind ports, so they must not run concurrently.
@@ -64,35 +66,57 @@ public class PortReservationTests
     public async Task WhileWaiting_LogsHeartbeatRepeatedlyUntilTheLockIsReleased()
     {
         const string lockName = "ParallelAspire.Tests.Heartbeat";
-        var messages = new System.Collections.Concurrent.ConcurrentQueue<string>();
 
-        // First reservation holds the lock.
-        var first = await PortReservation.ReserveAsync(o =>
+        var console = new CapturingWriter();
+        var original = Console.Out;
+        Console.SetOut(console);
+        try
         {
-            o.LockName = lockName;
-            o.DashboardBase = 45000;
-            o.OtlpBase = 46000;
-        });
+            // First reservation holds the lock.
+            var first = await PortReservation.ReserveAsync(o =>
+            {
+                o.LockName = lockName;
+                o.DashboardBase = 45000;
+                o.OtlpBase = 46000;
+            });
 
-        // Second waits behind it, heart-beating fast so the test doesn't crawl.
-        var secondTask = PortReservation.ReserveAsync(o =>
+            // Second waits behind it, heart-beating fast so the test doesn't crawl.
+            var secondTask = PortReservation.ReserveAsync(o =>
+            {
+                o.LockName = lockName;
+                o.DashboardBase = 45000;
+                o.OtlpBase = 46000;
+                o.HeartbeatInterval = TimeSpan.FromMilliseconds(150);
+            });
+
+            // Wait until the heartbeat has fired at least twice, then let it through.
+            for (var i = 0; i < 100 && console.WaitingLineCount < 2; i++)
+                await Task.Delay(50);
+
+            first.Dispose();
+            using var second = await secondTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.True(console.WaitingLineCount >= 2,
+                $"expected the wait to be logged at least twice, got {console.WaitingLineCount}");
+        }
+        finally
         {
-            o.LockName = lockName;
-            o.DashboardBase = 45000;
-            o.OtlpBase = 46000;
-            o.HeartbeatInterval = TimeSpan.FromMilliseconds(150);
-            o.Logger = messages.Enqueue;
-        });
+            Console.SetOut(original);
+        }
+    }
 
-        // Wait until it has logged at least twice, then let it through.
-        for (var i = 0; i < 100 && messages.Count < 2; i++)
-            await Task.Delay(50);
-
-        first.Dispose();
-        using var second = await secondTask.WaitAsync(TimeSpan.FromSeconds(10));
-
-        Assert.True(messages.Count >= 2, $"expected the wait to be logged at least twice, got {messages.Count}");
-        Assert.All(messages, m => Assert.Contains("waiting", m, StringComparison.OrdinalIgnoreCase));
+    // Thread-safe capture: the heartbeat is written from a polling continuation thread while the
+    // test thread reads the count.
+    private sealed class CapturingWriter : TextWriter
+    {
+        private readonly ConcurrentQueue<string> _lines = new();
+        public override Encoding Encoding => Encoding.UTF8;
+        public override void WriteLine(string? value)
+        {
+            if (value is not null) _lines.Enqueue(value);
+        }
+        public int WaitingLineCount =>
+            _lines.Count(l => l.Contains("waiting", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

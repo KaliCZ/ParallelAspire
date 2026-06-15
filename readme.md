@@ -101,7 +101,7 @@ All optional:
 | `OtlpBase` | `19000` | First port of the OTLP block (gRPC, HTTP, resource-service, then extras). |
 | `ExtraPortCount` | `0` | Extra ports to reserve beyond Aspire's own. |
 | `OffsetEnvironmentVariable` | `null` | Env var holding an integer offset; when set, ports are pinned to `base + offset` deterministically — no lock, no probing. |
-| `Logger` | `Console.WriteLine` | Where the every-5-seconds "still waiting for the lock" heartbeat goes. |
+| `HeartbeatInterval` | `5s` | How often the "still waiting for the lock" message is written to the console while blocked on a sibling. |
 
 ```csharp
 var ports = await PortReservation.ReserveAsync(o =>
