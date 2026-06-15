@@ -16,6 +16,7 @@ jobs:
     environment: Nuget.org
     permissions:
       contents: write
+      id-token: write   # mint a short-lived NuGet key via Trusted Publishing (OIDC)
 
     env:
       config: 'Release'
@@ -54,8 +55,17 @@ jobs:
     - name: Test
       run: dotnet test --no-build -c $config
 
+    # Trusted Publishing: exchange the GitHub OIDC token for a short-lived nuget.org
+    # key — no long-lived secret. Requires a publishing policy on nuget.org bound to
+    # this repo + workflow + environment, under the account named by vars.NUGET_USER.
+    - name: NuGet login (Trusted Publishing)
+      id: nuget-login
+      uses: NuGet/login@v1
+      with:
+        user: ${{ vars.NUGET_USER }}
+
     - name: Publish package
-      run: dotnet nuget push ./out/*.nupkg --source nuget.org --api-key ${{ secrets.NUGET_TOKEN }}
+      run: dotnet nuget push ./out/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
 
     - name: Attach package to release
       env:
