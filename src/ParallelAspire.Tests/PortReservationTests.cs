@@ -1,13 +1,13 @@
 using System.Net;
 using System.Net.Sockets;
-using Kalicz.Aspire;
+using ParallelAspire;
 
 // These tests set process-global env vars and bind ports, so they must not run concurrently.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
-namespace Kalicz.Aspire.Tests;
+namespace ParallelAspire.Tests;
 
-public class AspirePortReservationTests
+public class PortReservationTests
 {
     private static int PortOf(string envVar) =>
         new Uri(Environment.GetEnvironmentVariable(envVar)
@@ -16,16 +16,16 @@ public class AspirePortReservationTests
     [Fact]
     public async Task SecondReservation_BlocksUntilFirstIsDisposed()
     {
-        const string lockName = "Kalicz.Aspire.Tests.Lock";
+        const string lockName = "ParallelAspire.Tests.Lock";
 
-        var first = await AspirePortReservation.ReserveAsync(o =>
+        var first = await PortReservation.ReserveAsync(o =>
         {
             o.LockName = lockName;
             o.DashboardBase = 41000;
             o.OtlpBase = 42000;
         });
 
-        var secondTask = AspirePortReservation.ReserveAsync(o =>
+        var secondTask = PortReservation.ReserveAsync(o =>
         {
             o.LockName = lockName;
             o.DashboardBase = 41000;
@@ -49,9 +49,9 @@ public class AspirePortReservationTests
         using var occupied = new TcpListener(IPAddress.Loopback, dashboardBase);
         occupied.Start();   // hold the base port so the reservation must step past it
 
-        using var ports = await AspirePortReservation.ReserveAsync(o =>
+        using var ports = await PortReservation.ReserveAsync(o =>
         {
-            o.LockName = "Kalicz.Aspire.Tests.Probe";
+            o.LockName = "ParallelAspire.Tests.Probe";
             o.DashboardBase = dashboardBase;
             o.OtlpBase = 44000;
         });
@@ -63,7 +63,7 @@ public class AspirePortReservationTests
     [Fact]
     public async Task ReserveAsync_WithCountOverload_ReservesThatManyDistinctExtraPorts()
     {
-        using var ports = await AspirePortReservation.ReserveAsync(3);
+        using var ports = await PortReservation.ReserveAsync(3);
         Assert.Equal(3, ports.ExtraPorts.Count);
         Assert.Equal(3, ports.ExtraPorts.Distinct().Count());
     }
@@ -71,12 +71,12 @@ public class AspirePortReservationTests
     [Fact]
     public async Task PinnedMode_ResolvesPortsToBasePlusOffset_DeterministicallyAndDistinctPerOffset()
     {
-        const string offsetVar = "KALICZ_ASPIRE_TEST_OFFSET";
+        const string offsetVar = "PARALLEL_ASPIRE_TEST_OFFSET";
         async Task<int[]> ReserveAt(int offset)
         {
             Environment.SetEnvironmentVariable(offsetVar, offset.ToString());
             // Pinned mode takes no lock and holds nothing, so nothing to dispose.
-            var r = await AspirePortReservation.ReserveAsync(o =>
+            var r = await PortReservation.ReserveAsync(o =>
             {
                 o.DashboardBase = 30000;
                 o.OtlpBase = 31000;

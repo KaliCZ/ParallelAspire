@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
-namespace Kalicz.Aspire;
+namespace ParallelAspire;
 
 /// <summary>
 /// Lets multiple AppHost instances (e.g. git worktrees) run in parallel by giving each its own
@@ -13,12 +13,12 @@ namespace Kalicz.Aspire;
 /// <c>ReserveAsync</c> takes a machine-wide lock, probes for free ports, and points Aspire
 /// at them through env vars. The lock is held by the returned object: keep it alive across the
 /// app's startup and dispose it once the app has started, so a sibling can't pick the same ports
-/// while we're still binding them. Set <see cref="AspirePortOptions.OffsetEnvironmentVariable"/>
+/// while we're still binding them. Set <see cref="PortReservationOptions.OffsetEnvironmentVariable"/>
 /// to pin deterministic ports and skip the lock entirely.
 /// </para>
 /// <code>
 /// DistributedApplication app;
-/// using (var ports = await AspirePortReservation.ReserveAsync(o => o.ExtraPortCount = 1))
+/// using (var ports = await PortReservation.ReserveAsync(1))
 /// {
 ///     var builder = DistributedApplication.CreateBuilder(args);
 ///     builder.AddRedis("redis", port: ports.ExtraPorts[0]);
@@ -28,7 +28,7 @@ namespace Kalicz.Aspire;
 /// await app.WaitForShutdownAsync();
 /// </code>
 /// </summary>
-public sealed class AspirePortReservation : IDisposable
+public sealed class PortReservation : IDisposable
 {
     // Width of each probe lane: a port type is probed in [base, base + LaneWidth) and lanes sit
     // LaneWidth apart, so independent probes never stray into a neighbour's range.
@@ -37,21 +37,21 @@ public sealed class AspirePortReservation : IDisposable
     private readonly FileStream? _lockHandle;   // null in pinned mode (no lock taken)
     private bool _disposed;
 
-    private AspirePortReservation(FileStream? lockHandle) => _lockHandle = lockHandle;
+    private PortReservation(FileStream? lockHandle) => _lockHandle = lockHandle;
 
-    /// <summary>The reserved extra ports, in the order requested via <see cref="AspirePortOptions.ExtraPortCount"/>.</summary>
+    /// <summary>The reserved extra ports, in the order requested via <see cref="PortReservationOptions.ExtraPortCount"/>.</summary>
     public IReadOnlyList<int> ExtraPorts { get; private set; } = [];
 
     /// <summary>Reserve the Aspire ports (and any extras) for this AppHost instance.</summary>
-    /// <param name="configure">Optional tweaks; see <see cref="AspirePortOptions"/>.</param>
+    /// <param name="configure">Optional tweaks; see <see cref="PortReservationOptions"/>.</param>
     /// <param name="cancellationToken">Cancels waiting for the lock.</param>
     // Non-async + NoInlining so GetCallingAssembly resolves the real caller, not the async state
     // machine; the actual awaiting happens in ReserveCoreAsync.
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public static Task<AspirePortReservation> ReserveAsync(
-        Action<AspirePortOptions>? configure = null, CancellationToken cancellationToken = default)
+    public static Task<PortReservation> ReserveAsync(
+        Action<PortReservationOptions>? configure = null, CancellationToken cancellationToken = default)
     {
-        var options = new AspirePortOptions();
+        var options = new PortReservationOptions();
         configure?.Invoke(options);
         var caller = Assembly.GetCallingAssembly();
         return ReserveCoreAsync(options, caller, cancellationToken);
@@ -61,15 +61,15 @@ public sealed class AspirePortReservation : IDisposable
     /// <param name="extraPortCount">Extra ports to reserve beyond Aspire's own; see <see cref="ExtraPorts"/>.</param>
     /// <param name="cancellationToken">Cancels waiting for the lock.</param>
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public static Task<AspirePortReservation> ReserveAsync(
+    public static Task<PortReservation> ReserveAsync(
         int extraPortCount, CancellationToken cancellationToken = default)
     {
         var caller = Assembly.GetCallingAssembly();
-        return ReserveCoreAsync(new AspirePortOptions { ExtraPortCount = extraPortCount }, caller, cancellationToken);
+        return ReserveCoreAsync(new PortReservationOptions { ExtraPortCount = extraPortCount }, caller, cancellationToken);
     }
 
-    private static async Task<AspirePortReservation> ReserveCoreAsync(
-        AspirePortOptions options, Assembly caller, CancellationToken cancellationToken)
+    private static async Task<PortReservation> ReserveCoreAsync(
+        PortReservationOptions options, Assembly caller, CancellationToken cancellationToken)
     {
         // OTLP block lanes: gRPC, HTTP, resource-service, then one lane per extra port.
         var otlpHttpBase = options.OtlpBase + LaneWidth;
@@ -80,7 +80,7 @@ public sealed class AspirePortReservation : IDisposable
         if (options.OffsetEnvironmentVariable is { } offsetVar
             && int.TryParse(Environment.GetEnvironmentVariable(offsetVar), out var offset))
         {
-            var pinned = new AspirePortReservation(null)
+            var pinned = new PortReservation(null)
             {
                 ExtraPorts = PinnedExtras(options.ExtraPortCount, extraBase, offset),
             };
@@ -92,7 +92,7 @@ public sealed class AspirePortReservation : IDisposable
             return pinned;
         }
 
-        var lockName = options.LockName ?? caller.GetName().Name ?? "Kalicz.Aspire";
+        var lockName = options.LockName ?? caller.GetName().Name ?? "ParallelAspire";
         var lockHandle = await AcquireLockAsync(lockName, options.Logger ?? Console.WriteLine, cancellationToken)
             .ConfigureAwait(false);
 
@@ -108,7 +108,7 @@ public sealed class AspirePortReservation : IDisposable
             for (var i = 0; i < extras.Length; i++)
                 extras[i] = FindFreePortFrom(extraBase + i * LaneWidth);
 
-            return new AspirePortReservation(lockHandle) { ExtraPorts = extras };
+            return new PortReservation(lockHandle) { ExtraPorts = extras };
         }
         catch
         {
@@ -142,7 +142,7 @@ public sealed class AspirePortReservation : IDisposable
             waited += poll;
             if (waited >= nextBeat)
             {
-                log($"[Kalicz.Aspire] Still waiting for the port-reservation lock ({path}) — " +
+                log($"[ParallelAspire] Still waiting for the port-reservation lock ({path}) — " +
                     $"{waited.TotalSeconds:F0}s elapsed. Another AppHost instance is starting.");
                 nextBeat += heartbeat;
             }

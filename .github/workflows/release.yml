@@ -44,7 +44,7 @@ jobs:
         RELEASE_URL: ${{ github.event.release.html_url }}
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        dotnet build Kalicz.Aspire.slnx \
+        dotnet build ParallelAspire.slnx \
           -c $config \
           -p:Version="$VERSION" \
           -p:PackageReleaseNotes="See $RELEASE_URL" \

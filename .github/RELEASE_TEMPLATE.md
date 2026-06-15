@@ -8,7 +8,7 @@
   apply.
 -->
 
-## Kalicz.Aspire
+## Kalicz.ParallelAspire
 
 - 
 

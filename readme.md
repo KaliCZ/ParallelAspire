@@ -1,19 +1,19 @@
-# Kalicz.Aspire
+# Kalicz.ParallelAspire
 
-[![build](https://github.com/KaliCZ/Aspire/actions/workflows/build.yml/badge.svg)](https://github.com/KaliCZ/Aspire/actions/workflows/build.yml)
-[![NuGet](https://img.shields.io/nuget/v/Kalicz.Aspire.svg)](https://www.nuget.org/packages/Kalicz.Aspire)
+[![build](https://github.com/KaliCZ/ParallelAspire/actions/workflows/build.yml/badge.svg)](https://github.com/KaliCZ/ParallelAspire/actions/workflows/build.yml)
+[![NuGet](https://img.shields.io/nuget/v/Kalicz.ParallelAspire.svg)](https://www.nuget.org/packages/Kalicz.ParallelAspire)
 
 Parallel-safe local ports for [.NET Aspire](https://learn.microsoft.com/dotnet/aspire/) AppHosts.
 
 Running more than one AppHost at once — say, one per git worktree — fails because they all
-grab the same fixed dashboard / OTLP / resource-service ports. `Kalicz.Aspire` probes for a free
-set of ports for each instance, points Aspire at them via the standard env vars, and serializes
+grab the same fixed dashboard / OTLP / resource-service ports. `Kalicz.ParallelAspire` probes for a
+free set of ports for each instance, points Aspire at them via the standard env vars, and serializes
 startup with a cross-process lock so siblings never pick the same ports.
 
 ## Install
 
 ```sh
-dotnet add package Kalicz.Aspire
+dotnet add package Kalicz.ParallelAspire
 ```
 
 ## Usage
@@ -22,10 +22,10 @@ Reserve at the very top of your AppHost, hold the lock across startup, and relea
 app has started:
 
 ```csharp
-using Kalicz.Aspire;
+using ParallelAspire;
 
 DistributedApplication app;
-using (var ports = await AspirePortReservation.ReserveAsync())
+using (var ports = await PortReservation.ReserveAsync())
 {
     var builder = DistributedApplication.CreateBuilder(args);
     // ... wire up your resources ...
@@ -57,7 +57,7 @@ Need pinned host ports for your own resources (Redis, RabbitMQ, …)? Pass the c
 overload that takes just the number of extra ports — and read them back in order:
 
 ```csharp
-using (var ports = await AspirePortReservation.ReserveAsync(2))   // 2 extra ports
+using (var ports = await PortReservation.ReserveAsync(2))   // 2 extra ports
 {
     var builder = DistributedApplication.CreateBuilder(args);
     builder.AddRedis("redis", port: ports.ExtraPorts[0]);
@@ -104,7 +104,7 @@ All optional:
 | `Logger` | `Console.WriteLine` | Where the every-5-seconds "still waiting for the lock" heartbeat goes. |
 
 ```csharp
-var ports = await AspirePortReservation.ReserveAsync(o =>
+var ports = await PortReservation.ReserveAsync(o =>
 {
     o.LockName = "MyApp-Aspire-Ports";
     o.DashboardBase = 16036;

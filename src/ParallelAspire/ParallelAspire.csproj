@@ -7,21 +7,21 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
     <Version>0.0.0-dev</Version>
-    <PackageId>Kalicz.Aspire</PackageId>
-    <Description>Parallel-safe local ports for .NET Aspire AppHosts: reserves free dashboard / OTLP / resource-service ports (plus any extras) under a machine-wide mutex so multiple AppHost instances — e.g. git worktrees — can run side by side.</Description>
+    <PackageId>Kalicz.ParallelAspire</PackageId>
+    <Description>Parallel-safe local ports for .NET Aspire AppHosts: reserves free dashboard / OTLP / resource-service ports (plus any extras) under a machine-wide lock so multiple AppHost instances — e.g. git worktrees — can run side by side.</Description>
     <Authors>KaliCZ</Authors>
-    <PackageTags>Aspire, dotnet-aspire, AppHost, ports, worktree, local-dev</PackageTags>
+    <PackageTags>Aspire, dotnet-aspire, AppHost, ports, worktree, local-dev, parallel</PackageTags>
     <Copyright>Copyright © 2026 KaliCZ</Copyright>
-    <PackageProjectUrl>https://github.com/KaliCZ/Aspire</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/KaliCZ/ParallelAspire</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/KaliCZ/Aspire</RepositoryUrl>
+    <RepositoryUrl>https://github.com/KaliCZ/ParallelAspire</RepositoryUrl>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <DebugType>pdbonly</DebugType>
     <DebugSymbols>true</DebugSymbols>
-    <Product>Kalicz.Aspire</Product>
+    <Product>ParallelAspire</Product>
     <PackageReadmeFile>readme.md</PackageReadmeFile>
   </PropertyGroup>
 

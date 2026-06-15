@@ -1,10 +1,10 @@
-namespace Kalicz.Aspire;
+namespace ParallelAspire;
 
 /// <summary>
-/// Tunables for <see cref="AspirePortReservation"/>. All optional — the defaults give a
-/// working reservation; override only what collides with another local Aspire app.
+/// Tunables for <see cref="PortReservation"/>. All optional — the defaults give a working
+/// reservation; override only what collides with another local Aspire app.
 /// </summary>
-public sealed class AspirePortOptions
+public sealed class PortReservationOptions
 {
     /// <summary>
     /// Name of the cross-process lock that serializes reservation across AppHost instances (it
@@ -25,7 +25,7 @@ public sealed class AspirePortOptions
 
     /// <summary>
     /// Extra application ports to reserve beyond Aspire's own (e.g. one for Redis, one for
-    /// RabbitMQ). Exposed in order via <see cref="AspirePortReservation.ExtraPorts"/>.
+    /// RabbitMQ). Exposed in order via <see cref="PortReservation.ExtraPorts"/>.
     /// </summary>
     public int ExtraPortCount { get; set; }
 
