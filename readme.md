@@ -37,6 +37,13 @@ await app.WaitForShutdownAsync();
 
 That's it — every instance now gets its own dashboard and OTLP ports.
 
+**Order matters — reserve *before* `CreateBuilder`.** The ports are handed to Aspire purely through
+environment variables (`ASPNETCORE_URLS` for the dashboard, plus the OTLP and resource-service
+URLs), and Aspire reads those when the builder is created. `ReserveAsync` sets them, so it must run
+**before** `DistributedApplication.CreateBuilder(args)` — that's why it's the first line inside the
+`using`. Call it *after* the builder and the dashboard/OTLP ports won't take effect (you'll only get
+the extra ports, which you read back yourself).
+
 **Why the split instead of `app.Run()`?** The lock has to outlive port-binding but *not* the whole
 session. `StartAsync()` returns once the host has bound its ports; releasing the lock then lets a
 waiting sibling proceed, while `WaitForShutdownAsync()` keeps the app running unlocked. A sibling
